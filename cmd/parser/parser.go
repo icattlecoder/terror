@@ -1,105 +1,90 @@
-package main
+package parser
 
 import (
 	"bytes"
-	_ "embed"
-	"flag"
 	"fmt"
 	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
-	"github.com/dave/dst/decorator/resolver/gopackages"
+	"github.com/dave/dst/dstutil"
 	"go/token"
-	"golang.org/x/tools/go/packages"
-	"io/ioutil"
-	"os"
-)
-
-var (
-	dir = flag.String("dir", "", "project dir")
-	pkg = flag.String("pkg", "", "pkg path")
+	"strings"
 )
 
 const terrorsPkgPath = "github.com/icattlecoder/terrors"
 
-func main() {
-	flag.Parse()
+type NoTraced struct {
+	Positions []token.Position
+}
 
-	pkgs, err := decorator.Load(&packages.Config{
-		Dir:  *dir,
-		Mode: packages.LoadAllSyntax,
-	}, *pkg)
-
-	if err != nil {
-		panic(err)
+func (e *NoTraced) Error() string {
+	buf := bytes.Buffer{}
+	for _, l := range e.Positions {
+		buf.WriteString(l.String())
+		buf.WriteString("\n")
 	}
+	return buf.String()
+}
 
-	if *dir == "" || *pkg == "" {
-		flag.PrintDefaults()
+type PackageParser struct {
+	*decorator.Package
+	NoTraced
+}
+
+func New(p *decorator.Package) *PackageParser {
+	return &PackageParser{Package: p}
+}
+
+func (p *PackageParser) Pos(node dst.Node) {
+	pos := p.Package.Fset.Position(p.Decorator.Ast.Nodes[node].Pos())
+	p.NoTraced.Positions = append(p.NoTraced.Positions, pos)
+}
+
+func (p *PackageParser) Run(w bool) error {
+	for _, syntax := range p.Syntax {
+		p.ParseFile(syntax)
+	}
+	if len(p.NoTraced.Positions) == 0 {
+		return nil
+	}
+	if w {
+		return p.Save()
+	}
+	return &p.NoTraced
+}
+
+func (p *PackageParser) ParseFile(file *dst.File) {
+
+	if notrace(file) {
 		return
 	}
-
-	r := decorator.NewRestorerWithImports(*pkg, gopackages.New(*dir))
-	for i, p := range pkgs {
-		for _, syntax := range p.Syntax {
-			if !parseFile(syntax) {
-				continue
-			}
-			buf := bytes.Buffer{}
-			if err := r.Fprint(&buf, syntax); err != nil {
-				fmt.Println(p.GoFiles[i], "failed")
-				continue
-			}
-
-			if err := safeWriteFile(buf.Bytes(), p.GoFiles[i]); err != nil {
-				fmt.Println(p.GoFiles[i], "failed")
-				continue
-			}
-			fmt.Println(p.GoFiles[i], "ok")
-		}
-	}
-}
-
-func safeWriteFile(data []byte, filename string) error {
-
-	f, err := ioutil.TempFile("", "terrors")
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(data); err != nil {
-		return err
-	}
-	return os.Rename(f.Name(), filename)
-}
-
-//func refactor() {
-//	f, err := decorator.Parse(code)
-//	if err != nil {
-//		panic(err)
-//	}
-//	if !parseFile(f) {
-//		return
-//	}
-//	r := decorator.NewRestorerWithImports("github.com/icattlecoder/terrors/refacterr/test", gopackages.New("/Users/wangming/Projects/terrors/refacterr"))
-//	if err := r.Print(f); err != nil {
-//		panic(err)
-//	}
-//}
-
-func parseFile(file *dst.File) (hasErrResult bool) {
 
 	for _, decl := range file.Decls {
 		fdecl, ok := decl.(*dst.FuncDecl)
 		if !ok {
 			continue
 		}
-		if parseFunc(fdecl) {
-			hasErrResult = true
-		}
+		p.parseFunc(fdecl)
 	}
 	return
 }
 
-func parseFunc(node dst.Node) (hasErrResult bool) {
+func notrace(node dst.Node) bool {
+	_, _, ps := dstutil.Decorations(node)
+	for _, p := range ps {
+		for _, d := range p.Decs {
+			if strings.Contains(d, "go:notrace") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (p *PackageParser) parseFunc(node dst.Node) {
+
+	if notrace(node) {
+		return
+	}
 
 	var errsIndex []int
 	var body dst.Node
@@ -112,11 +97,11 @@ func parseFunc(node dst.Node) (hasErrResult bool) {
 		results = f.Type.Results
 		body = f.Body
 	default:
-		return false
+		return
 	}
 
 	if results == nil || len(results.List) == 0 {
-		return false
+		return
 	}
 
 	for i, r := range results.List {
@@ -129,23 +114,24 @@ func parseFunc(node dst.Node) (hasErrResult bool) {
 		}
 	}
 	if len(errsIndex) == 0 {
-		return false
+		return
 	}
 
 	parser := blockListFuncParser{
 		funcParser: funcParser{
-			errsIndex: errsIndex,
-			result:    results.List,
+			errsIndex:     errsIndex,
+			result:        results.List,
+			PackageParser: p,
 		},
 	}
 	parser.inspect(body)
-	return parser.hasErrHandled
+	return
 }
 
 type funcParser struct {
-	errsIndex     []int
-	result        []*dst.Field
-	hasErrHandled bool
+	*PackageParser
+	errsIndex []int
+	result    []*dst.Field
 }
 
 type blockListFuncParser struct {
@@ -166,7 +152,7 @@ func (b *blockListFuncParser) handleReturnStmt(returnStmt *dst.ReturnStmt) bool 
 				Args: []dst.Expr{returnStmt.Results[i]},
 			}
 		}
-		b.hasErrHandled = true
+		b.Pos(returnStmt)
 		return true
 	}
 
@@ -184,7 +170,7 @@ func (b *blockListFuncParser) handleReturnStmt(returnStmt *dst.ReturnStmt) bool 
 		}
 		list = append(list, returnStmt)
 		*b.list = list
-		b.hasErrHandled = true
+		b.Pos(returnStmt)
 		return true
 	}
 
@@ -232,9 +218,6 @@ func (b *blockListFuncParser) inspect(node dst.Node) bool {
 			root:       node,
 		}
 		dst.Inspect(nodeType, nb.inspect)
-		if nb.hasErrHandled {
-			b.hasErrHandled = true
-		}
 		return false
 	case *dst.CaseClause:
 		nb := blockListFuncParser{
@@ -243,15 +226,9 @@ func (b *blockListFuncParser) inspect(node dst.Node) bool {
 			root:       node,
 		}
 		dst.Inspect(nodeType, nb.inspect)
-		if nb.hasErrHandled {
-			b.hasErrHandled = true
-		}
 		return false
 	case *dst.FuncLit:
-		ok := parseFunc(nodeType)
-		if ok {
-			b.hasErrHandled = true
-		}
+		b.parseFunc(nodeType)
 		return false
 	default:
 		return true
