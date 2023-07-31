@@ -23,9 +23,11 @@ jobs:
 
       - name: Build Step 1
         run: |
+          sleep 15
           echo "step 1 success"
       - name: Build Step 2
         run: |
+          sleep 15
           echo "step 2 success"
 
   test:
@@ -36,12 +38,13 @@ jobs:
     steps:
       - name: UAT
         run: |
+          sleep 15
           echo "uat success"
 
       - name: SIT
         run: |
-          echo "sit failed"
-          exit 1
+          sleep 15
+          echo "sit success"
 
   deploy:
     runs-on: ubuntu-20.04
@@ -50,10 +53,12 @@ jobs:
     steps:
       - name: staging
         run: |
+          sleep 15
           echo "staging success"
 
       - name: production
         run: |
+          sleep 15
           echo "production success"
           exit 0
 
