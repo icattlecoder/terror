@@ -12,53 +12,61 @@ env:
 
 jobs:
 
-  build:
+  A:
     runs-on: ubuntu-20.04
-
     steps:
-      - name: Check out code
-        uses: actions/checkout@v2
-        with:
-          fetch-depth: 0
-
-      - name: Build Step 1
+      - name: A
         run: |
-          sleep 15
-          echo "step 1 success"
-      - name: Build Step 2
-        run: |
-          sleep 15
-          echo "step 2 success"
+          sleep 10
+          echo "A success"
 
-  test:
+  B:
     runs-on: ubuntu-20.04
     needs:
-      - build
-
+      - A
     steps:
-      - name: UAT
+      - name: B
         run: |
-          sleep 15
-          echo "uat success"
+          sleep 10
+          echo "B success"
 
-      - name: SIT
-        run: |
-          sleep 15
-          echo "sit success"
-
-  deploy:
+  C:
     runs-on: ubuntu-20.04
     needs:
-      - test
+      - A
     steps:
-      - name: staging
+      - name: C
         run: |
-          sleep 15
-          echo "staging success"
+          sleep 10
+          echo "C success"
 
-      - name: production
+  D:
+    runs-on: ubuntu-20.04
+    needs:
+      - B
+    steps:
+      - name: D
         run: |
-          sleep 15
-          echo "production success"
-          exit 0
+          sleep 10
+          echo "D success"
 
+  E:
+    runs-on: ubuntu-20.04
+    needs:
+      - B
+      - C
+    steps:
+      - name: E
+        run: |
+          sleep 10
+          echo "E success"
+
+  F:
+    runs-on: ubuntu-20.04
+    needs:
+      - C
+    steps:
+      - name: F
+        run: |
+          sleep 10
+          echo "F success"
