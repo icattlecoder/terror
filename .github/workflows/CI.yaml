@@ -38,7 +38,8 @@ jobs:
       - name: C
         run: |
           sleep 10
-          echo "C success"
+          echo "C failed"
+          exit 1
 
   D:
     runs-on: ubuntu-20.04
