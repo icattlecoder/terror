@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - 'develop'
+
+env:
+  GO_VERSION: '1.20'
+  CGO_ENABLED: 0
+  IN_DOCKER: ""
+
+jobs:
+
+  A:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: A
+        run: |
+          sleep 10
+          echo "A success"
+
+  B:
+    runs-on: ubuntu-20.04
+    needs:
+      - A
+    steps:
+      - name: B
+        run: |
+          sleep 10
+          echo "B success"
+
+  C:
+    runs-on: ubuntu-20.04
+    needs:
+      - A
+    steps:
+      - name: C
+        run: |
+          sleep 10
+          echo "C failed"
+          exit 1
+
+  D:
+    runs-on: ubuntu-20.04
+    needs:
+      - B
+    steps:
+      - name: D
+        run: |
+          sleep 10
+          echo "D failed"
+          exit 1
+
+  E:
+    runs-on: ubuntu-20.04
+    needs:
+      - B
+      - C
+    steps:
+      - name: E
+        run: |
+          sleep 10
+          echo "E success"
+
+  F:
+    runs-on: ubuntu-20.04
+    needs:
+      - C
+    steps:
+      - name: F
+        run: |
+          sleep 10
+          echo "F success"

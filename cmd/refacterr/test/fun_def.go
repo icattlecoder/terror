@@ -1,8 +1,11 @@
+//go:xnotrace
 package test
 
 import (
 	"errors"
 	"io"
+
+	"github.com/icattlecoder/terrors"
 )
 
 //func FuncA() {
@@ -10,7 +13,7 @@ import (
 //}
 //
 func FuncErr() error {
-	return errors.New("func err")
+	return terrors.Trace(errors.New("func err"))
 }
 
 func IFuncErr() (interface{}, error) {
@@ -19,18 +22,19 @@ func IFuncErr() (interface{}, error) {
 
 func INamedFuncErr() (i interface{}, err error) {
 	i, err = nil, io.EOF
+	err = terrors.Trace(err)
 	return
 }
 
 func FuncWithError() (interface{}, error) {
 	var i int
 	if i > 1 {
-		return nil, errors.New("i>1")
+		return nil, terrors.Trace(errors.New("i>1"))
 	}
 
 	if i > 2 {
 		if err := FuncErr(); err != nil {
-			return nil, err
+			return nil, terrors.Trace(err)
 		}
 	}
 
@@ -39,30 +43,31 @@ func FuncWithError() (interface{}, error) {
 
 		},
 		"fe": func() error {
-			return errors.New("")
+			return terrors.Trace(errors.New(""))
 		},
 	}
 
 	switch i {
 	case 0:
-		return nil, FuncErr()
+		return nil, terrors.Trace(FuncErr())
 	case 1:
 		if _, err := IFuncErr(); err != nil {
-			return nil, err
+			return nil, terrors.Trace(err)
 		}
-		return IFuncErr()
+		result0, result1 := IFuncErr()
+		return result0, terrors.Trace(result1)
 	}
 	f := func() error {
-		return io.EOF
+		return terrors.Trace(io.EOF)
 	}
 	if err := f(); err != nil {
-		return nil, err
+		return nil, terrors.Trace(err)
 	}
-
-
 	_, err := IFuncErr()
 	if err != nil {
-		return IFuncErr()
+		result0, result1 := IFuncErr()
+		return result0, terrors.Trace(result1)
 	}
-	return IFuncErr()
+	result0, result1 := IFuncErr()
+	return result0, terrors.Trace(result1)
 }

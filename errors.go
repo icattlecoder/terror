@@ -3,7 +3,6 @@ package terrors
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -14,28 +13,55 @@ type caller struct {
 	frame runtime.Frame
 }
 
+// funcname removes the path prefix component of a function's name reported by func.Name().
+func funcname(name string) string {
+	i := strings.LastIndex(name, "/")
+	name = name[i+1:]
+	i = strings.Index(name, ".")
+	return name[i+1:]
+}
+
 func (c *caller) String() string {
-	i := strings.LastIndex(c.frame.Function, ".")
-	_, f := filepath.Split(c.file)
-	return fmt.Sprintf("%s:%d:%s", f, c.line, c.frame.Function[i+1:])
+	//i := strings.LastIndex(c.frame.Function, ".")
+	//_, f := filepath.Split(c.file)
+	return fmt.Sprintf("%s\n\t%s:%d", c.frame.Function, c.file, c.line)
 }
 
 type chainError struct {
-	caller caller
+	caller *stack
 	err    error
 }
 
-func (c *chainError) getTraceError(l int, newline, prefix string) string {
+func (c *chainError) Format(f fmt.State, verb rune) {
+	fmt.Println("-------------------+++++++++++++++-")
 
-	err, ok := c.err.(*chainError)
-	if ok && err != nil {
-		return "(" + c.caller.String() + " -> " + newline + strings.Repeat(prefix, l) + err.getTraceError(l+1, newline, prefix) + ")"
-	}
-	if c.err != nil {
-		return c.caller.String() + " " + c.err.Error()
-	}
-	return c.caller.String()
+	c.caller.Format(f,verb)
+
+	//switch verb {
+	//case 'v':
+	//	if f.Flag('+') {
+	//		io.WriteString(f, printIdent(c, "\n", ""))
+	//		return
+	//	}
+	//	fallthrough
+	//case 's':
+	//	io.WriteString(f, c.Error())
+	//case 'q':
+	//	fmt.Fprintf(f, "%q", c.Error())
+	//}
 }
+
+//func (c *chainError) getTraceError() string {
+//
+//	var cerr *chainError
+//	if errors.As(c.err, &cerr) {
+//		return c.caller.String() + "\n" + cerr.getTraceError()
+//	}
+//	if c.err != nil {
+//		return c.caller.String() + "\n" + c.err.Error()
+//	}
+//	return c.caller.String()
+//}
 
 func (c *chainError) Unwrap() error {
 	return c.err
@@ -49,53 +75,28 @@ func Trace(err error) error {
 	if err == nil {
 		return nil
 	}
-	pc, f, l, ok := runtime.Caller(1)
-	if !ok {
+
+	var cerr *chainError
+	if errors.As(err, &cerr){
+		fmt.Println(err,"--------")
 		return err
 	}
-	frames := runtime.CallersFrames([]uintptr{pc})
-	frame, _ := frames.Next()
-	chain, ok := err.(*chainError)
-	if !ok {
-		chain = &chainError{caller: caller{
-			file:  f,
-			line:  l,
-			frame: frame,
-		}, err: err}
-		return chain
-	}
-	pChain := &chainError{caller: caller{
-		file:  f,
-		line:  l,
-		frame: frame,
-	}, err: chain}
+	fmt.Println(err,"++++++++")
+	cs:=callers()
+	pChain := &chainError{caller: cs, err: err}
 	return pChain
 }
 
-// print func call chain
-func Print(err error) string {
-	return printIdent(err, "", "")
+func Traced(err error) bool  {
+	var cerr *chainError
+	ok:= errors.As(err, &cerr)
+	return ok
 }
 
-// print pretty func call chain
-func PrintIdent(err error) string {
-	return printIdent(err, "\n", "\t")
-}
-
-func printIdent(err error, newline, prefix string) string {
-	for {
-		if _, ok := err.(*chainError); ok {
-			break
-		}
-		if err2 := errors.Unwrap(err); err2 != nil {
-			err = err2
-			continue
-		}
-		break
+func Unwrap(err error)  error {
+	var cerr *chainError
+	if errors.As(err, &cerr){
+		return cerr
 	}
-	t, ok := err.(*chainError)
-	if ok {
-		return t.getTraceError(1, newline, prefix)
-	}
-	return err.Error()
+	return err
 }
